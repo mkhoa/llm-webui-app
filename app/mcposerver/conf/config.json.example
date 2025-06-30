@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+      "screenshot": {
+        "command": "uv",
+        "args": [
+          "--directory", 
+          "/app/mcp/mcp-server-demo", 
+          "run", 
+          "main.py"]
+      }
+    }
+}

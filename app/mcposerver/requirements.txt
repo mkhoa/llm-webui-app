@@ -1,0 +1,6 @@
+fastapi
+requests
+packaging
+uvicorn
+fastmcp
+openai-agents
