@@ -1,0 +1,160 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
+    env_file:
+      - .env
+    container_name: open-webui
+    volumes:
+      - ./data/open-webui:/app/backend/data
+    ports:
+      - 8090:8090
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    networks:
+      - mcp-network
+    depends_on:
+      - postgres
+      
+  # ollama:
+  #   env_file:
+  #     - .env
+  #   healthcheck:
+  #     interval: 30s
+  #     retries: 5
+  #     start_period: 10s
+  #     test: curl --fail http://localhost:11434/api/version || exit 1
+  #     timeout: 3s
+  #   image: ollama/ollama:latest
+  #   ports:
+  #     - 11434:11434
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./data/ollama:/root/.ollama
+  #   networks:
+  #     - mcp-network      
+      
+  # pipelines:
+  #   image: ghcr.io/open-webui/pipelines:main
+  #   env_file:
+  #     - .env
+  #   container_name: pipelines
+  #   volumes:
+  #     - ./data/pipelines:/app/pipelines
+  #   ports:
+  #     - 9099:9099
+  #   environment:
+  #     - OPENAI_API_KEY:${OPENAI_API_KEY}
+  #     - GEMINI_API_KEY:${GEMINI_API_KEY}
+  #     - WEBUI_URL:https://<domain-name>
+  #   extra_hosts:
+  #     - host.docker.internal:host-gateway
+  #   restart: unless-stopped
+  #   networks:
+  #     - mcp-network
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    container_name: postgres
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - mcp-network      
+  redis:
+    env_file:
+      - .env
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 20s
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      timeout: 3s
+    image: redis/redis-stack:latest
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - mcp-network      
+  mcposerver:
+    command: ["--config", "/app/conf/config.json"]
+    env_file: 
+      - .env
+    build:
+      context: .
+      dockerfile: ./app/mcposerver/Dockerfile
+    container_name: mcposerver
+    ports:
+      - 8000:8000    
+    restart: unless-stopped
+    volumes:
+      - ./app/mcposerver/conf:/app/conf:ro
+      - ./app/mcposerver/mcp:/app/mcp
+    networks:
+      - mcp-network     
+
+  mcpinspector:
+    env_file: 
+      - .env
+    image: mcp/inspector:latest
+    ports:
+      - 5173:5173 
+    restart: unless-stopped
+    networks:
+      - mcp-network     
+  tika:
+    env_file: 
+      - .env
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 5s
+      test: curl --fail http://localhost:9998/tika || exit 1
+      timeout: 5s
+    image: apache/tika:latest-full
+    ports:
+      - 9998:9998
+    restart: unless-stopped
+    networks:
+      - mcp-network      
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_HTML=${LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+      - TZ=Europe/London
+    ports:
+      - 8191:8191
+    restart: unless-stopped
+    networks:
+      - mcp-network    
+  playwright:
+    env_file: 
+      - .env
+    build:
+      context: .
+      dockerfile: ./app/playwright/Dockerfile
+    container_name: playwright
+    ports:
+      - 8001:8001
+      - 5900:5900    
+    volumes:
+      - ./app/playwright/app/config.json:/app/config.json:ro
+    restart: unless-stopped
+    networks:
+      - mcp-network   
+
+networks:
+  mcp-network:
+    driver: bridge
+
+volumes:
+  postgres-data:

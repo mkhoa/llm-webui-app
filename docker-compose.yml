@@ -1,103 +1,116 @@
 services:
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
-    env_file:
-      - .env
-    container_name: open-webui
-    volumes:
-      - ./data/open-webui:/app/backend/data
+  api:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.multi
+    #   target: api-build
+    image: ghcr.io/danny-avila/librechat-dev-api:latest
+    container_name: LibreChat-API
     ports:
-      - 8090:8090
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    restart: unless-stopped
-    networks:
-      - mcp-network
+      - ${PORT}:${PORT}
     depends_on:
-      - postgres
-  ollama:
-    env_file:
-      - .env
-    healthcheck:
-      interval: 30s
-      retries: 5
-      start_period: 10s
-      test: curl --fail http://localhost:11434/api/version || exit 1
-      timeout: 3s
-    image: ollama/ollama:latest
-    ports:
-      - 11434:11434
-    restart: unless-stopped
-    volumes:
-      - ./data/ollama:/root/.ollama
-    networks:
-      - mcp-network      
-      
-  pipelines:
-    image: ghcr.io/open-webui/pipelines:main
-    env_file:
-      - .env
-    container_name: pipelines
-    volumes:
-      - ./data/pipelines:/app/pipelines
-    ports:
-      - 9099:9099
-    environment:
-      - OPENAI_API_KEY:${OPENAI_API_KEY}
-      - GEMINI_API_KEY:${GEMINI_API_KEY}
-      - WEBUI_URL:https://<domain-name>
+      - mongodb
+      - rag_api
+    restart: always
     extra_hosts:
-      - host.docker.internal:host-gateway
-    restart: unless-stopped
-    networks:
-      - mcp-network
-
-  postgres:
-    image: pgvector/pgvector:pg17
-    restart: unless-stopped
-    container_name: postgres
+    - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MEILI_HOST=http://meilisearch:7700
+      - RAG_PORT=${RAG_PORT:-8000}
+      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+      - ./data/librechat/images:/app/client/public/images
+      - ./data/librechat/uploads:/app/uploads
+      - ./data/librechat/logs:/app/api/logs
     networks:
-      - mcp-network      
-  redis:
+      - mcp-network     
+  mongodb:
+    container_name: chat-mongodb
+    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
+    #   - 27018:27017
+    image: mongo
+    restart: always
+    volumes:
+      - ./data/data-node:/data/db
+    command: mongod --noauth
+    networks:
+      - mcp-network     
+  meilisearch:
+    container_name: chat-meilisearch
+    image: getmeili/meilisearch:v1.12.3
+    restart: always
+    # ports: # Uncomment this to access meilisearch from outside docker
+    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
     env_file:
       - .env
-    healthcheck:
-      interval: 30s
-      retries: 5
-      start_period: 20s
-      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
-      timeout: 3s
-    image: redis/redis-stack:latest
-    restart: unless-stopped
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
     volumes:
-      - ./data/redis:/data
+      - ./data/meili_data:/meili_data
     networks:
-      - mcp-network      
-  mcposerver:
-    command: ["--config", "/app/conf/config.json"]
+      - mcp-network     
+  vectordb:
+    image: ankane/pgvector:latest
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    restart: always
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+    networks:
+      - mcp-network     
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=${RAG_PORT:-8000}
+    restart: always
+    depends_on:
+      - vectordb
+    env_file:
+      - .env
+    networks:
+      - mcp-network    
+  mcp-server:
     env_file: 
       - .env
     build:
       context: .
-      dockerfile: ./app/mcposerver/Dockerfile
-    container_name: mcposerver
+      dockerfile: ./app/mcp-server/Dockerfile
+    container_name: playwright
+    ports:
+      - 8001:8001
+      - 5900:5900    
+    volumes:
+      - ./app/mcp-server/app/config.json:/app/config.json:ro
+    restart: unless-stopped
+    networks:
+      - mcp-network
+  mcp-custom:
+    env_file: 
+      - .env
+    build:
+      context: .
+      dockerfile: ./app/mcp-custom/Dockerfile
+    container_name: mcpserver
     ports:
       - 8000:8000    
     restart: unless-stopped
     volumes:
-      - ./app/mcposerver/conf:/app/conf:ro
-      - ./app/mcposerver/mcp:/app/mcp
+      - ./app/mcp-custom/conf:/app/conf
+      - ./app/mcp-custom/mcp:/app/mcp
     networks:
-      - mcp-network     
-
+      - mcp-network
   mcpinspector:
     env_file: 
       - .env
@@ -106,41 +119,13 @@ services:
       - 5173:5173 
     restart: unless-stopped
     networks:
-      - mcp-network     
-  tika:
-    env_file: 
-      - .env
-    healthcheck:
-      interval: 30s
-      retries: 5
-      start_period: 5s
-      test: curl --fail http://localhost:9998/tika || exit 1
-      timeout: 5s
-    image: apache/tika:latest-full
-    ports:
-      - 9998:9998
-    restart: unless-stopped
-    networks:
-      - mcp-network      
+      - mcp-network  
 
-  # mcp-server:
-  #   build:
-  #     context: ./mcp-server
-  #     dockerfile: Dockerfile
-  #   container_name: mcp-server
-  #   env_file:
-  #     - .env
-  #   volumes:
-  #     - ./mcp-server:/app
-  #   ports:
-  #     - "8000:8000"
-  #   restart: unless-stopped
-  #   networks:
-  #     - mcp-network
+volumes:
+  pgdata2:
 
 networks:
   mcp-network:
     driver: bridge
 
-volumes:
-  postgres-data:
+

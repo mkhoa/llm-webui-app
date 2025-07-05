@@ -4,3 +4,4 @@ packaging
 uvicorn
 fastmcp
 openai-agents
+mcp-proxy
