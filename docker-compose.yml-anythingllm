@@ -1,0 +1,100 @@
+services:
+  anything-llm:
+    container_name: anythingllm
+    image: mintplexlabs/anythingllm
+    cap_add:
+      - SYS_ADMIN
+    volumes:
+      - "./.env:/app/server/.env"
+      - "./data/anythingllm/server/storage:/app/server/storage"
+      - "./data/anythingllm/collector/hotdir/:/app/collector/hotdir"
+      - "./data/anythingllm/collector/outputs/:/app/collector/outputs"
+    environment:
+      - SERVER_PORT=${SERVER_PORT}
+      - STORAGE_DIR=${STORAGE_DIR}
+      - JWT_SECRET=${JWT_SECRET}
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_LLM_MODEL_PREF=${GEMINI_LLM_MODEL_PREF}
+      - EMBEDDING_ENGINE=${EMBEDDING_ENGINE}
+      - GEMINI_EMBEDDING_API_KEY=${GEMINI_EMBEDDING_API_KEY}
+      - EMBEDDING_MODEL_PREF=${EMBEDDING_MODEL_PREF}
+      - VECTOR_DB=${VECTOR_DB}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGVECTOR_CONNECTION_STRING=${PGVECTOR_CONNECTION_STRING}
+      - PGVECTOR_TABLE_NAME=${PGVECTOR_TABLE_NAME}
+      - AGENT_GSE_KEY=${AGENT_GSE_KEY}
+      - AGENT_GSE_CTX=${AGENT_GSE_CTX}
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - ${SERVER_PORT}:${SERVER_PORT}
+    env_file:
+      - .env
+    networks:
+      - mcp-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    container_name: postgres
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - mcp-network    
+  mcpserver:
+    env_file: 
+      - .env
+    build:
+      context: .
+      dockerfile: ./app/mcp-server/Dockerfile
+    container_name: mcpserver
+    ports:
+      - 8001:8001
+      - 5900:5900    
+    volumes:
+      - ./app/mcp-server/conf:/app/conf
+    restart: unless-stopped
+    networks:
+      - mcp-network
+  mcpcustom:
+    env_file: 
+      - .env
+    build:
+      context: .
+      dockerfile: ./app/mcp-custom/Dockerfile
+    container_name: mcpcustom
+    ports:
+      - 8000:8000    
+    restart: unless-stopped
+    volumes:
+      - ./app/mcp-custom/conf:/app/conf
+      - ./app/mcp-custom/mcp:/app/mcp
+    networks:
+      - mcp-network
+  mcpinspector:
+    env_file: 
+      - .env
+    image: mcp/inspector:latest
+    ports:
+      - 5173:5173 
+    restart: unless-stopped
+    networks:
+      - mcp-network  
+
+volumes:
+  pgdata2:
+
+networks:
+  mcp-network:
+    driver: bridge
+
+

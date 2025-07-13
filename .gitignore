@@ -1,5 +1,6 @@
 # Data folder
 data/*
+env/*
 config.json
 librechat.yaml
 
