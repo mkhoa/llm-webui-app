@@ -1,0 +1,131 @@
+services:
+  api:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.multi
+    #   target: api-build
+    image: ghcr.io/danny-avila/librechat-dev-api:latest
+    container_name: LibreChat-API
+    ports:
+      - ${PORT}:${PORT}
+    depends_on:
+      - mongodb
+      - rag_api
+    restart: always
+    extra_hosts:
+    - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MEILI_HOST=http://meilisearch:7700
+      - RAG_PORT=${RAG_PORT:-8000}
+      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+      - ./data/librechat/images:/app/client/public/images
+      - ./data/librechat/uploads:/app/uploads
+      - ./data/librechat/logs:/app/api/logs
+    networks:
+      - mcp-network     
+  mongodb:
+    container_name: chat-mongodb
+    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
+    #   - 27018:27017
+    image: mongo
+    restart: always
+    volumes:
+      - ./data/data-node:/data/db
+    command: mongod --noauth
+    networks:
+      - mcp-network     
+  meilisearch:
+    container_name: chat-meilisearch
+    image: getmeili/meilisearch:v1.12.3
+    restart: always
+    # ports: # Uncomment this to access meilisearch from outside docker
+    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
+    env_file:
+      - .env
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - ./data/meili_data:/meili_data
+    networks:
+      - mcp-network     
+  vectordb:
+    image: ankane/pgvector:latest
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    restart: always
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+    networks:
+      - mcp-network     
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=${RAG_PORT:-8000}
+    restart: always
+    depends_on:
+      - vectordb
+    env_file:
+      - .env
+    networks:
+      - mcp-network    
+  mcpserver:
+    env_file: 
+      - .env
+    build:
+      context: .
+      dockerfile: ./app/mcp-server/Dockerfile
+    container_name: mcpserver
+    ports:
+      - 8001:8001
+      - 5900:5900    
+    volumes:
+      - ./app/mcp-server/conf:/app/conf
+    restart: unless-stopped
+    networks:
+      - mcp-network
+  mcpcustom:
+    env_file: 
+      - .env
+    build:
+      context: .
+      dockerfile: ./app/mcp-custom/Dockerfile
+    container_name: mcpcustom
+    ports:
+      - 8000:8000    
+    restart: unless-stopped
+    volumes:
+      - ./app/mcp-custom/conf:/app/conf
+      - ./app/mcp-custom/mcp:/app/mcp
+    networks:
+      - mcp-network
+  mcpinspector:
+    env_file: 
+      - .env
+    image: mcp/inspector:latest
+    ports:
+      - 5173:5173 
+    restart: unless-stopped
+    networks:
+      - mcp-network  
+
+volumes:
+  pgdata2:
+
+networks:
+  mcp-network:
+    driver: bridge
+
+

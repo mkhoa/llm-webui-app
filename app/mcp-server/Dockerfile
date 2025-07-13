@@ -25,5 +25,6 @@ RUN sh /uv-installer.sh && rm /uv-installer.sh
 
 # Ensure the installed binary is on the `PATH`
 ENV PATH="/root/.local/bin/:$PATH"
-CMD ["uvx", "mcp-proxy", "--host", "0.0.0.0", "--port", "8001",  "--named-server-config", "/app/config.json"]
+
+CMD ["uvx", "mcp-proxy", "--pass-environment", "--host", "0.0.0.0", "--port", "8001",  "--named-server-config", "/app/conf/config.json"]
 EXPOSE 8001

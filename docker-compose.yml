@@ -1,108 +1,77 @@
 services:
-  api:
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile.multi
-    #   target: api-build
-    image: ghcr.io/danny-avila/librechat-dev-api:latest
-    container_name: LibreChat-API
+  anything-llm:
+    container_name: anythingllm
+    image: mintplexlabs/anythingllm
+    cap_add:
+      - SYS_ADMIN
+    volumes:
+      - "./.env:/app/server/.env"
+      - "./data/anythingllm/server/storage:/app/server/storage"
+      - "./data/anythingllm/collector/hotdir/:/app/collector/hotdir"
+      - "./data/anythingllm/collector/outputs/:/app/collector/outputs"
+    environment:
+      - SERVER_PORT=${SERVER_PORT}
+      - STORAGE_DIR=${STORAGE_DIR}
+      - JWT_SECRET=${JWT_SECRET}
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_LLM_MODEL_PREF=${GEMINI_LLM_MODEL_PREF}
+      - EMBEDDING_ENGINE=${EMBEDDING_ENGINE}
+      - GEMINI_EMBEDDING_API_KEY=${GEMINI_EMBEDDING_API_KEY}
+      - EMBEDDING_MODEL_PREF=${EMBEDDING_MODEL_PREF}
+      - VECTOR_DB=${VECTOR_DB}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGVECTOR_CONNECTION_STRING=${PGVECTOR_CONNECTION_STRING}
+      - PGVECTOR_TABLE_NAME=${PGVECTOR_TABLE_NAME}
+      - AGENT_GSE_KEY=${AGENT_GSE_KEY}
+      - AGENT_GSE_CTX=${AGENT_GSE_CTX}
+    user: "${UID:-1000}:${GID:-1000}"
     ports:
-      - ${PORT}:${PORT}
-    depends_on:
-      - mongodb
-      - rag_api
-    restart: always
+      - ${SERVER_PORT}:${SERVER_PORT}
+    env_file:
+      - .env
+    networks:
+      - mcp-network
     extra_hosts:
-    - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    container_name: postgres
     env_file:
       - .env
     environment:
-      - HOST=0.0.0.0
-      - NODE_ENV=production
-      - MONGO_URI=mongodb://mongodb:27017/LibreChat
-      - MEILI_HOST=http://meilisearch:7700
-      - RAG_PORT=${RAG_PORT:-8000}
-      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     volumes:
-      - type: bind
-        source: ./librechat.yaml
-        target: /app/librechat.yaml
-      - ./data/librechat/images:/app/client/public/images
-      - ./data/librechat/uploads:/app/uploads
-      - ./data/librechat/logs:/app/api/logs
-    networks:
-      - mcp-network     
-  mongodb:
-    container_name: chat-mongodb
-    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
-    #   - 27018:27017
-    image: mongo
-    restart: always
-    volumes:
-      - ./data/data-node:/data/db
-    command: mongod --noauth
-    networks:
-      - mcp-network     
-  meilisearch:
-    container_name: chat-meilisearch
-    image: getmeili/meilisearch:v1.12.3
-    restart: always
-    # ports: # Uncomment this to access meilisearch from outside docker
-    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
-    env_file:
-      - .env
-    environment:
-      - MEILI_HOST=http://meilisearch:7700
-      - MEILI_NO_ANALYTICS=true
-    volumes:
-      - ./data/meili_data:/meili_data
-    networks:
-      - mcp-network     
-  vectordb:
-    image: ankane/pgvector:latest
-    environment:
-      POSTGRES_DB: mydatabase
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-    restart: always
-    volumes:
-      - pgdata2:/var/lib/postgresql/data
-    networks:
-      - mcp-network     
-  rag_api:
-    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
-    environment:
-      - DB_HOST=vectordb
-      - RAG_PORT=${RAG_PORT:-8000}
-    restart: always
-    depends_on:
-      - vectordb
-    env_file:
-      - .env
+      - ./data/postgres:/var/lib/postgresql/data
     networks:
       - mcp-network    
-  mcp-server:
+  mcpserver:
     env_file: 
       - .env
     build:
       context: .
       dockerfile: ./app/mcp-server/Dockerfile
-    container_name: playwright
+    container_name: mcpserver
     ports:
       - 8001:8001
       - 5900:5900    
     volumes:
-      - ./app/mcp-server/app/config.json:/app/config.json:ro
+      - ./app/mcp-server/conf:/app/conf
     restart: unless-stopped
     networks:
       - mcp-network
-  mcp-custom:
+  mcpcustom:
     env_file: 
       - .env
     build:
       context: .
       dockerfile: ./app/mcp-custom/Dockerfile
-    container_name: mcpserver
+    container_name: mcpcustom
     ports:
       - 8000:8000    
     restart: unless-stopped
