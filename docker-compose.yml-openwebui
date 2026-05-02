@@ -138,7 +138,7 @@ services:
     networks:
       - mcp-network    
   playwright:
-    env_file: 
+    env_file: 1.
       - .env
     build:
       context: .
